@@ -78,6 +78,11 @@ class DeepSeekClient:
     _SEND_BUTTON_SELECTOR = 'div.ds-button--primary:not(.ds-button--disabled)'
     _REPLY_SELECTOR = 'div.ds-assistant-message-main-content'
     _THINK_SELECTOR = 'div.ds-think-content'
+    _MODEL_SELECTORS = {
+        "default": 'div[data-model-type="default"]',
+        "expert": 'div[data-model-type="expert"]',
+        "vision": 'div[data-model-type="vision"]',
+    }
     _LOGIN_INDICATORS = [
         "text=Scan with",
         "text=登录",
@@ -95,11 +100,12 @@ class DeepSeekClient:
 
     # ---- 公开接口 ----
 
-    def ask(self, prompt: str) -> Reply:
+    def ask(self, prompt: str, model_type: str | None = None) -> Reply:
         """发送消息并获取回复。
 
         Args:
             prompt: 要发送的问题文本。
+            model_type: 模型模式，可选 "default" / "expert" / "vision"，None 则不切换。
 
         Returns:
             Reply: 包含回复文本、成功状态、耗时等信息。
@@ -109,6 +115,10 @@ class DeepSeekClient:
             self._ensure_browser()
             self._navigate()
             self._ensure_logged_in()
+
+            # 切换模型模式
+            if model_type:
+                self._select_model(model_type)
 
             # 记录当前回复数量，用于定位新回复
             self._reply_count = len(self._page.query_selector_all(self._REPLY_SELECTOR))
@@ -136,6 +146,28 @@ class DeepSeekClient:
         if getattr(self, "_playwright", None):
             self._playwright.stop()
             self._playwright = None
+
+    def new_chat(self):
+        """开始新对话（Ctrl+J）。如浏览器未启动会自动初始化。"""
+        self._ensure_browser()
+        self._navigate()
+        self._ensure_logged_in()
+        self._page.keyboard.press("Control+J")
+        time.sleep(0.5)
+        logger.info("已开始新对话")
+
+    # ---- 模型切换 ----
+
+    def _select_model(self, model_type: str):
+        """切换模型模式。"""
+        selector = self._MODEL_SELECTORS.get(model_type)
+        if not selector:
+            valid = ", ".join(self._MODEL_SELECTORS)
+            raise ValueError(f"无效的模型类型 '{model_type}'，可选：{valid}")
+
+        self._page.click(selector)
+        time.sleep(0.5)
+        logger.info(f"已切换至 {model_type} 模式")
 
     # ---- 浏览器生命周期 ----
 
