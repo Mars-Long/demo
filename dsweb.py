@@ -46,7 +46,7 @@ class Config:
     viewport_width: int = 1400
     viewport_height: int = 900
     locale: str = "zh-CN"
-    slow_mo: int = 80  # 操作间延迟(ms)，0 为无延迟
+    slow_mo: int = 30  # 操作间延迟(ms)，0 为无延迟
     send_timeout: int = 180  # 等待回复超时(秒)
     login_timeout: int = 300  # 等待登录超时(秒)
 
@@ -153,7 +153,7 @@ class DeepSeekClient:
         self._navigate()
         self._ensure_logged_in()
         self._page.keyboard.press("Control+J")
-        time.sleep(0.5)
+        time.sleep(0.3)
         logger.info("已开始新对话")
 
     # ---- 模型切换 ----
@@ -166,7 +166,7 @@ class DeepSeekClient:
             raise ValueError(f"无效的模型类型 '{model_type}'，可选：{valid}")
 
         self._page.click(selector)
-        time.sleep(0.5)
+        time.sleep(0.2)
         logger.info(f"已切换至 {model_type} 模式")
 
     # ---- 浏览器生命周期 ----
@@ -215,7 +215,7 @@ class DeepSeekClient:
         """打开 DeepSeek 页面。"""
         logger.info(f"打开 {self._config.url}")
         self._page.goto(self._config.url, wait_until="domcontentloaded")
-        time.sleep(3)
+        time.sleep(1)
 
     # ---- 登录 ----
 
@@ -229,7 +229,7 @@ class DeepSeekClient:
         # 等待页面完全就绪
         self._page.wait_for_selector(self._INPUT_SELECTOR, timeout=15000)
         logger.info("页面就绪")
-        time.sleep(1)
+        time.sleep(0.3)
 
     def _need_login(self) -> bool:
         """判断当前页面是否需要登录。"""
@@ -260,19 +260,19 @@ class DeepSeekClient:
         """聚焦输入框 → 填入文本（fill 为主，insertText 为回退）。"""
         input_box = self._page.wait_for_selector(self._INPUT_SELECTOR, timeout=15000)
         input_box.click()
-        time.sleep(0.5)
+        time.sleep(0.2)
 
         # 主路径：Playwright 的 fill() 能正确触发 React 受控组件的事件流
         try:
             input_box.fill(text)
-            time.sleep(0.5)
+            time.sleep(0.2)
         except Exception:
             # 回退：keyboard.insertText 模拟真实输入
             logger.debug("fill() 失败，回退到 insertText")
             self._page.keyboard.press("Control+A")
             time.sleep(0.1)
             self._page.keyboard.insert_text(text)
-            time.sleep(1)
+            time.sleep(0.3)
 
         logger.info("已填入内容到输入框")
 
@@ -305,7 +305,7 @@ class DeepSeekClient:
             if current > count_before:
                 logger.debug("新回复元素出现")
                 break
-            time.sleep(1)
+            time.sleep(0.5)
         else:
             logger.warning("等待回复超时，尝试获取已有内容")
             return self._extract_reply_text(count_before)
@@ -314,7 +314,7 @@ class DeepSeekClient:
         last_text = ""
         stable_count = 0
         while stable_count < 3 and (time.time() - start) < timeout:
-            time.sleep(1)
+            time.sleep(0.5)
             current_text = self._extract_reply_text(count_before)
             if current_text == last_text:
                 stable_count += 1
