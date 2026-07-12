@@ -5,16 +5,47 @@ DeepSeek Web 客户端
 通过 Playwright 自动化操作 DeepSeek 网页版，发送消息并获取回复。
 可作为模块导入使用，也可直接命令行运行。
 
-Usage as module:
+依赖：playwright, Pillow（仅 --image 需要）
+
+Usage as module
+---------------
     >>> from dsweb import DeepSeekClient, Config
     >>> client = DeepSeekClient()
     >>> reply = client.ask("你好，介绍一下你自己")
     >>> print(reply.text)
+    >>> reply = client.ask("继续", model_type="expert")         # 切换模型
+    >>> reply = client.ask("描述", image_path="./photo.jpg")    # 上传图片
+    >>> client.new_chat()                                       # 新对话
     >>> client.close()
 
-Usage as CLI:
+Usage as CLI
+------------
+    # 基础用法
     python dsweb.py "你的问题"
-    python dsweb.py --headless --json "你的问题"
+    python dsweb.py "问题" --headless           # 无头模式（不显示浏览器）
+    python dsweb.py "问题" --json               # JSON 格式输出
+    python dsweb.py "问题" --debug              # 输出调试日志
+
+    # 从 stdin 读取（管道 / 重定向 / 交互式）
+    echo "你的问题" | python dsweb.py
+    python dsweb.py < question.txt
+
+    # 模型切换（default / expert / vision）
+    python dsweb.py --model expert "复杂推理问题"
+    python dsweb.py --model vision "描述这张图"
+
+    # 图片 — 指定文件路径（headless 可用，需 pip install Pillow）
+    python dsweb.py --model vision --image ./photo.jpg "描述这张图片"
+    python dsweb.py --model vision --image ./photo.jpg --headless "描述"
+
+    # 图片 — 从剪贴板粘贴（需有头模式，图片先 Ctrl+C）
+    python dsweb.py --model vision --paste-image "描述这张图片"
+
+    # 浏览器选择
+    python dsweb.py --browser chromium "问题"   # 默认 msedge
+
+    # 超时设置
+    python dsweb.py --timeout 300 "需要较长等待的问题"
 """
 
 from __future__ import annotations
@@ -100,12 +131,15 @@ class DeepSeekClient:
 
     # ---- 公开接口 ----
 
-    def ask(self, prompt: str, model_type: str | None = None) -> Reply:
+    def ask(self, prompt: str, model_type: str | None = None,
+            paste_image: bool = False, image_path: str | None = None) -> Reply:
         """发送消息并获取回复。
 
         Args:
             prompt: 要发送的问题文本。
-            model_type: 模型模式，可选 "default" / "expert" / "vision"，None 则不切换。
+            model_type: 模型模式，"default" / "expert" / "vision"，None 不切换。
+            paste_image: True 则从系统剪贴板粘贴图片（需有头模式）。
+            image_path: 图片文件路径，自动转 PNG 写入剪贴板后粘贴（支持 headless）。
 
         Returns:
             Reply: 包含回复文本、成功状态、耗时等信息。
@@ -120,10 +154,17 @@ class DeepSeekClient:
             if model_type:
                 self._select_model(model_type)
 
+            # 粘贴图片
+            if image_path:
+                self._attach_image_file(image_path)
+            elif paste_image:
+                self._paste_image()
+
             # 记录当前回复数量，用于定位新回复
             self._reply_count = len(self._page.query_selector_all(self._REPLY_SELECTOR))
 
             self._input_text(prompt)
+            self._page.wait_for_selector(self._SEND_BUTTON_SELECTOR, timeout=60000)
             self._click_send()
 
             reply_text = self._wait_for_reply()
@@ -168,6 +209,61 @@ class DeepSeekClient:
         self._page.click(selector)
         time.sleep(0.2)
         logger.info(f"已切换至 {model_type} 模式")
+
+    # ---- 图片粘贴 ----
+
+    def _paste_image(self):
+        """将剪贴板中的图片粘贴到输入框。"""
+        input_box = self._page.wait_for_selector(self._INPUT_SELECTOR, timeout=15000)
+        input_box.click()
+        time.sleep(0.3)
+        self._page.keyboard.press("Control+V")
+        time.sleep(1.5)  # 让图片开始上传
+        logger.info("已粘贴图片到输入框")
+
+    def _attach_image_file(self, image_path: str):
+        """读文件 → 转换为 PNG → 写入浏览器剪贴板 → Ctrl+V 粘贴。支持 headless。"""
+        import base64
+        from io import BytesIO
+        from pathlib import Path
+
+        try:
+            from PIL import Image
+        except ImportError:
+            raise ImportError("--image 需要 Pillow 库，请执行: pip install Pillow")
+
+        path = Path(image_path).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"图片不存在: {image_path}")
+
+        # 读文件 → 转换为 PNG（Chromium 剪贴板只支持 image/png）
+        img = Image.open(path)
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        mime = "image/png"
+
+        # 通过 JS 写入浏览器剪贴板（Playwright 默认授予 clipboard-write 权限）
+        self._page.evaluate(
+            """
+            async ([b64, mime]) => {
+                const resp = await fetch(`data:${mime};base64,${b64}`);
+                const blob = await resp.blob();
+                await navigator.clipboard.write([
+                    new ClipboardItem({ [mime]: blob })
+                ]);
+            }
+            """,
+            [b64, mime],
+        )
+
+        # 聚焦输入框并粘贴
+        input_box = self._page.wait_for_selector(self._INPUT_SELECTOR, timeout=15000)
+        input_box.click()
+        time.sleep(0.3)
+        self._page.keyboard.press("Control+V")
+        time.sleep(1.5)  # 让图片开始上传
+        logger.info(f"已粘贴图片: {path.name}")
 
     # ---- 浏览器生命周期 ----
 
@@ -368,6 +464,14 @@ def main():
     parser.add_argument("--json", action="store_true", dest="json_output", help="以 JSON 格式输出结果")
     parser.add_argument("--timeout", type=int, default=180, help="等待回复的超时秒数（默认 180）")
     parser.add_argument("--browser", default="msedge", help="浏览器选择：msedge / chromium / chrome")
+    parser.add_argument(
+        "--model", "--model-type",
+        default=None,
+        choices=["default", "expert", "vision"],
+        help="模型模式：default / expert / vision（不指定则不切换）",
+    )
+    parser.add_argument("--paste-image", action="store_true", help="发送前粘贴剪贴板中的图片（用于 vision 模式）")
+    parser.add_argument("--image", default=None, help="要上传的图片路径（支持 headless）")
     parser.add_argument("--debug", action="store_true", help="输出调试日志")
 
     args = parser.parse_args()
@@ -398,7 +502,7 @@ def main():
 
     client = DeepSeekClient(config)
     try:
-        reply = client.ask(prompt.strip())
+        reply = client.ask(prompt.strip(), model_type=args.model, paste_image=args.paste_image, image_path=args.image)
 
         if args.json_output:
             output = {
