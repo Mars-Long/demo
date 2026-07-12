@@ -421,24 +421,22 @@ class DeepSeekClient:
         return self._extract_reply_text(count_before)
 
     def _extract_reply_text(self, count_before: int) -> str:
-        """获取最新回复的纯文本内容。"""
-        replies = self._page.query_selector_all(self._REPLY_SELECTOR)
-        if len(replies) > count_before:
-            text = replies[-1].inner_text().strip()
-            if text:
-                return text
-
-        # 回退：JS 获取
+        """获取最新回复的纯文本内容（移除引文编号）。"""
         text = self._page.evaluate(
             """
-            () => {
+            (countBefore) => {
                 const els = document.querySelectorAll(
                     'div.ds-assistant-message-main-content'
                 );
-                if (els.length > 0) return els[els.length - 1].innerText;
-                return '';
+                if (els.length <= countBefore) return '';
+                const el = els[els.length - 1];
+                const clone = el.cloneNode(true);
+                // 移除引文编号（DeepSeek 使用 ds-markdown-cite 类）
+                clone.querySelectorAll('.ds-markdown-cite').forEach(s => s.remove());
+                return clone.innerText.trim();
             }
-            """
+            """,
+            count_before,
         )
         if text.strip():
             return text.strip()
