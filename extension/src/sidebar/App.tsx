@@ -79,20 +79,30 @@ export default function SidebarApp() {
 
   // Create node from captured data
   const handleCreateNode = async () => {
-    if (!selectedNodeId || !capturedData) {
-      showToast('⚠️ 请先在画布中选中一个父节点', 'error');
+    if (!capturedData) {
+      showToast('⚠️ 没有可保存的对话内容', 'error');
       setCaptureState('idle');
       return;
     }
 
     setCaptureState('creating');
     try {
-      const res = await nodeApi.create(capturedData.question, {
-        parentId: selectedNodeId,
-        aiAnswer: capturedData.answer,
-      });
-      await fetchAll();
-      selectNode(res.node.frontmatter.id);
+      if (selectedNodeId) {
+        // 有选中父节点 → 创建为子节点
+        const res = await nodeApi.create(capturedData.question, {
+          parentId: selectedNodeId,
+          aiAnswer: capturedData.answer,
+        });
+        await fetchAll();
+        selectNode(res.node.frontmatter.id);
+      } else {
+        // 无父节点 → 以本次对话为根节点
+        const res = await nodeApi.create(capturedData.question, {
+          aiAnswer: capturedData.answer,
+        });
+        await fetchAll();
+        selectNode(res.node.frontmatter.id);
+      }
       setCaptureState('done');
       showToast('✅ 节点已创建', 'success');
       sendToContent({ type: 'CREATED' });

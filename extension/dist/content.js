@@ -256,9 +256,8 @@
     toggle.title = "\u6536\u8D77/\u5C55\u5F00\u4FA7\u8FB9\u680F";
     Object.assign(toggle.style, {
       position: "fixed",
-      top: "50%",
+      bottom: "20px",
       right: `${currentWidth}px`,
-      transform: "translateY(-50%)",
       zIndex: "100000",
       width: "22px",
       height: "48px",

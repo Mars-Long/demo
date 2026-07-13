@@ -100,16 +100,15 @@ function injectSidebar() {
   container.appendChild(iframe);
   document.body.appendChild(container);
 
-  // Toggle button (pinned to left edge of sidebar)
+  // Toggle button (pinned to bottom-left edge of sidebar)
   const toggle = document.createElement('button');
   toggle.id = TOGGLE_ID;
   toggle.textContent = '»';
   toggle.title = '收起/展开侧边栏';
   Object.assign(toggle.style, {
     position: 'fixed',
-    top: '50%',
+    bottom: '20px',
     right: `${currentWidth}px`,
-    transform: 'translateY(-50%)',
     zIndex: '100000',
     width: '22px',
     height: '48px',

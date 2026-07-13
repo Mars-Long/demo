@@ -27,7 +27,8 @@ export default function CaptureBar({
   onCreate,
   onCancel,
 }: Props) {
-  const parentName = selectedNode?.frontmatter.title || '(未选择)';
+  const parentName = selectedNode?.frontmatter.title || null;
+  const targetLabel = parentName ? `「${parentName}」` : '作为根节点';
 
   return (
     <div className="border-b border-gray-200 bg-white shrink-0">
@@ -56,7 +57,7 @@ export default function CaptureBar({
             className="w-full bg-blue-500 text-white rounded-md py-1.5 text-xs font-medium hover:bg-blue-600 disabled:opacity-50 transition-colors"
             onClick={onManualCapture}
           >
-            📄 捕获对话到「{parentName}」
+            📄 捕获对话 —&gt; {targetLabel}
           </button>
         )}
 
@@ -79,7 +80,7 @@ export default function CaptureBar({
               </div>
             </div>
             <div className="text-[10px] text-gray-400 mb-2">
-              将存入：{parentName}
+              将存入：{parentName ? `「${parentName}」的子节点` : '🌳 根节点'}
             </div>
             <div className="flex gap-2">
               <button
