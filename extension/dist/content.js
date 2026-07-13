@@ -318,10 +318,21 @@
     }
   }
   function adjustPageMargin(w) {
-    const mainEl = document.querySelector("main") || document.querySelector("#root > div") || document.querySelector('[class*="layout"]') || document.querySelector('[class*="app"]');
-    if (mainEl instanceof HTMLElement) {
-      mainEl.style.marginRight = w > 0 ? `${w}px` : "";
-      mainEl.style.transition = "margin-right 0.3s ease";
+    document.documentElement.style.overflowX = w > 0 ? "hidden" : "";
+    if (w > 0) {
+      document.body.style.marginRight = `${w}px`;
+      document.body.style.transition = "margin-right 0.3s ease";
+    } else {
+      document.body.style.marginRight = "";
+    }
+    const mainEl = document.querySelector("main") || document.querySelector('[class*="layout"]') || document.querySelector('[class*="app"]');
+    if (mainEl instanceof HTMLElement && mainEl !== document.body) {
+      if (w > 0) {
+        mainEl.style.marginRight = `${w}px`;
+        mainEl.style.transition = "margin-right 0.3s ease";
+      } else {
+        mainEl.style.marginRight = "";
+      }
     }
   }
   function injectCaptureButton() {

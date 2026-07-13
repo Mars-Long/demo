@@ -184,16 +184,30 @@ function onToggle() {
 // ── page layout ────────────────────────────────────────────
 
 function adjustPageMargin(w: number) {
-  // Try multiple selectors for DeepSeek's main layout container
+  // 防止页面横向溢出
+  document.documentElement.style.overflowX = w > 0 ? 'hidden' : '';
+
+  // 直接调整 body 右边距，最通用不依赖 DeepSeek DOM 结构
+  if (w > 0) {
+    document.body.style.marginRight = `${w}px`;
+    document.body.style.transition = 'margin-right 0.3s ease';
+  } else {
+    document.body.style.marginRight = '';
+  }
+
+  // 同时尝试找到 DeepSeek 内部的主布局容器
   const mainEl =
     document.querySelector('main') ||
-    document.querySelector('#root > div') ||
     document.querySelector('[class*="layout"]') ||
     document.querySelector('[class*="app"]');
 
-  if (mainEl instanceof HTMLElement) {
-    mainEl.style.marginRight = w > 0 ? `${w}px` : '';
-    mainEl.style.transition = 'margin-right 0.3s ease';
+  if (mainEl instanceof HTMLElement && mainEl !== document.body) {
+    if (w > 0) {
+      mainEl.style.marginRight = `${w}px`;
+      mainEl.style.transition = 'margin-right 0.3s ease';
+    } else {
+      mainEl.style.marginRight = '';
+    }
   }
 }
 
