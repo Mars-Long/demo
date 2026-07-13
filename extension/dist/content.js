@@ -339,6 +339,8 @@
     );
     for (const el of candidates) {
       if (!(el instanceof HTMLElement)) continue;
+      if (el.id === CONTAINER_ID || el.id === TOGGLE_ID || el.id === CAPTURE_ID || el.id === TOAST_ID) continue;
+      if (el.closest(`#${CONTAINER_ID}`)) continue;
       const s = window.getComputedStyle(el);
       if (s.position !== "fixed") continue;
       const right = parseFloat(s.right);
