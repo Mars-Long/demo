@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "知识树 - DeepSeek 侧边栏",
+  "version": "0.1.0",
+  "description": "在 DeepSeek 网页版旁边显示知识树画布，捕获对话并组织进知识树",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chat.deepseek.com/*",
+    "http://localhost:8000/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["sidebar/*"],
+      "matches": ["https://chat.deepseek.com/*"]
+    }
+  ]
+}
