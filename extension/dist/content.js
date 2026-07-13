@@ -312,8 +312,6 @@
       toggle.textContent = "\xBB";
       adjustPageMargin(currentWidth);
       adjustFixedElements(currentWidth);
-      scheduleFixedRescan(2e3);
-      scheduleFixedRescan(5e3);
     } else {
       container.style.transform = `translateX(${currentWidth}px)`;
       toggle.style.right = "0";
@@ -337,7 +335,7 @@
   var _fixedAdjusted = /* @__PURE__ */ new WeakSet();
   function adjustFixedElements(w) {
     const candidates = document.querySelectorAll(
-      'div, button, nav, aside, header, a, span, svg, [role="button"], [class*="fixed"], [class*="sidebar"], [class*="panel"], [class*="btn"], [class*="icon"]'
+      'div, button, nav, aside, header, [class*="fixed"], [class*="sidebar"], [class*="panel"]'
     );
     for (const el of candidates) {
       if (!(el instanceof HTMLElement)) continue;
@@ -359,11 +357,6 @@
         }
       }
     }
-  }
-  function scheduleFixedRescan(delayMs) {
-    setTimeout(() => {
-      if (visible) adjustFixedElements(currentWidth);
-    }, delayMs);
   }
   function injectCaptureButton() {
     const btn = document.createElement("button");
