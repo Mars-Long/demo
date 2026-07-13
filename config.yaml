@@ -1,0 +1,15 @@
+# 知识树应用 — 全局配置
+# 数据根目录（相对路径相对于本 config.yaml 所在目录）
+data_root: "./data"
+
+# 服务配置
+host: "127.0.0.1"
+port: 8000
+
+# DeepSeek 浏览器配置
+ds_headless: true
+ds_browser: "msedge"
+ds_send_timeout: 180
+
+# 角色提示词（追加在每条上下文 prompt 末尾），默认为空
+role_prompt: ""
