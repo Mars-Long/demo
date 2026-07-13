@@ -175,6 +175,8 @@ function onToggle() {
     toggle.textContent = '»';
     adjustPageMargin(currentWidth);
     adjustFixedElements(currentWidth);
+    scheduleFixedRescan(2000);
+    scheduleFixedRescan(5000);
   } else {
     container.style.transform = `translateX(${currentWidth}px)`;
     toggle.style.right = '0';
@@ -205,8 +207,9 @@ function adjustPageMargin(w: number) {
 const _fixedAdjusted = new WeakSet<HTMLElement>();
 
 function adjustFixedElements(w: number) {
+  // 宽泛选择器 — 覆盖绝大多数可能的 UI 元素
   const candidates = document.querySelectorAll(
-    'div, button, nav, aside, header, [class*="fixed"], [class*="sidebar"], [class*="panel"]'
+    'div, button, nav, aside, header, a, span, svg, [role="button"], [class*="fixed"], [class*="sidebar"], [class*="panel"], [class*="btn"], [class*="icon"]'
   );
   for (const el of candidates) {
     if (!(el instanceof HTMLElement)) continue;
@@ -221,7 +224,6 @@ function adjustFixedElements(w: number) {
 
     if (w > 0) {
       if (right < w + 30) {
-        // 用 CSS 变量，后续 resize 自动生效
         el.style.right = `calc(${right}px + var(--kt-sidebar-width))`;
         _fixedAdjusted.add(el);
       }
@@ -232,6 +234,13 @@ function adjustFixedElements(w: number) {
       }
     }
   }
+}
+
+// SPA 页面元素可能延迟渲染，在 toggle 后延迟再扫一次
+function scheduleFixedRescan(delayMs: number) {
+  setTimeout(() => {
+    if (visible) adjustFixedElements(currentWidth);
+  }, delayMs);
 }
 
 // ── capture button ─────────────────────────────────────────
