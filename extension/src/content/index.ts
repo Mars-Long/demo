@@ -47,6 +47,7 @@ function init() {
     injectToast();
     setupMessageBridge();
     adjustPageMargin(currentWidth);
+    adjustFixedElements(currentWidth);
 
     if (autoCapture) startObserver();
   });
@@ -173,40 +174,59 @@ function onToggle() {
     toggle.style.right = `${currentWidth}px`;
     toggle.textContent = '»';
     adjustPageMargin(currentWidth);
+    adjustFixedElements(currentWidth);
   } else {
     container.style.transform = `translateX(${currentWidth}px)`;
     toggle.style.right = '0';
     toggle.textContent = '«';
     adjustPageMargin(0);
+    adjustFixedElements(0);
   }
 }
 
 // ── page layout ────────────────────────────────────────────
 
 function adjustPageMargin(w: number) {
-  // 防止页面横向溢出
-  document.documentElement.style.overflowX = w > 0 ? 'hidden' : '';
+  // CSS 变量，供 fixed 元素动态使用
+  document.documentElement.style.setProperty('--kt-sidebar-width', w > 0 ? `${w}px` : '0px');
 
-  // 直接调整 body 右边距，最通用不依赖 DeepSeek DOM 结构
   if (w > 0) {
-    document.body.style.marginRight = `${w}px`;
-    document.body.style.transition = 'margin-right 0.3s ease';
+    document.documentElement.style.width = `calc(100% - ${w}px)`;
+    document.documentElement.style.overflowX = 'hidden';
+    document.documentElement.style.transition = 'width 0.3s ease';
   } else {
-    document.body.style.marginRight = '';
+    document.documentElement.style.width = '';
+    document.documentElement.style.overflowX = '';
+    document.documentElement.style.transition = '';
   }
+}
 
-  // 同时尝试找到 DeepSeek 内部的主布局容器
-  const mainEl =
-    document.querySelector('main') ||
-    document.querySelector('[class*="layout"]') ||
-    document.querySelector('[class*="app"]');
+// 记录被修改过的 fixed 元素，以便恢复
+const _fixedAdjusted = new WeakSet<HTMLElement>();
 
-  if (mainEl instanceof HTMLElement && mainEl !== document.body) {
+function adjustFixedElements(w: number) {
+  const candidates = document.querySelectorAll(
+    'div, button, nav, aside, header, [class*="fixed"], [class*="sidebar"], [class*="panel"]'
+  );
+  for (const el of candidates) {
+    if (!(el instanceof HTMLElement)) continue;
+    const s = window.getComputedStyle(el);
+    if (s.position !== 'fixed') continue;
+
+    const right = parseFloat(s.right);
+    if (isNaN(right)) continue;
+
     if (w > 0) {
-      mainEl.style.marginRight = `${w}px`;
-      mainEl.style.transition = 'margin-right 0.3s ease';
+      if (right < w + 30) {
+        // 用 CSS 变量，后续 resize 自动生效
+        el.style.right = `calc(${right}px + var(--kt-sidebar-width))`;
+        _fixedAdjusted.add(el);
+      }
     } else {
-      mainEl.style.marginRight = '';
+      if (_fixedAdjusted.has(el)) {
+        el.style.right = '';
+        _fixedAdjusted.delete(el);
+      }
     }
   }
 }

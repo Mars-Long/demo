@@ -204,6 +204,7 @@
       injectToast();
       setupMessageBridge();
       adjustPageMargin(currentWidth);
+      adjustFixedElements(currentWidth);
       if (autoCapture) startObserver();
     });
   }
@@ -310,28 +311,48 @@
       toggle.style.right = `${currentWidth}px`;
       toggle.textContent = "\xBB";
       adjustPageMargin(currentWidth);
+      adjustFixedElements(currentWidth);
     } else {
       container.style.transform = `translateX(${currentWidth}px)`;
       toggle.style.right = "0";
       toggle.textContent = "\xAB";
       adjustPageMargin(0);
+      adjustFixedElements(0);
     }
   }
   function adjustPageMargin(w) {
-    document.documentElement.style.overflowX = w > 0 ? "hidden" : "";
+    document.documentElement.style.setProperty("--kt-sidebar-width", w > 0 ? `${w}px` : "0px");
     if (w > 0) {
-      document.body.style.marginRight = `${w}px`;
-      document.body.style.transition = "margin-right 0.3s ease";
+      document.documentElement.style.width = `calc(100% - ${w}px)`;
+      document.documentElement.style.overflowX = "hidden";
+      document.documentElement.style.transition = "width 0.3s ease";
     } else {
-      document.body.style.marginRight = "";
+      document.documentElement.style.width = "";
+      document.documentElement.style.overflowX = "";
+      document.documentElement.style.transition = "";
     }
-    const mainEl = document.querySelector("main") || document.querySelector('[class*="layout"]') || document.querySelector('[class*="app"]');
-    if (mainEl instanceof HTMLElement && mainEl !== document.body) {
+  }
+  var _fixedAdjusted = /* @__PURE__ */ new WeakSet();
+  function adjustFixedElements(w) {
+    const candidates = document.querySelectorAll(
+      'div, button, nav, aside, header, [class*="fixed"], [class*="sidebar"], [class*="panel"]'
+    );
+    for (const el of candidates) {
+      if (!(el instanceof HTMLElement)) continue;
+      const s = window.getComputedStyle(el);
+      if (s.position !== "fixed") continue;
+      const right = parseFloat(s.right);
+      if (isNaN(right)) continue;
       if (w > 0) {
-        mainEl.style.marginRight = `${w}px`;
-        mainEl.style.transition = "margin-right 0.3s ease";
+        if (right < w + 30) {
+          el.style.right = `calc(${right}px + var(--kt-sidebar-width))`;
+          _fixedAdjusted.add(el);
+        }
       } else {
-        mainEl.style.marginRight = "";
+        if (_fixedAdjusted.has(el)) {
+          el.style.right = "";
+          _fixedAdjusted.delete(el);
+        }
       }
     }
   }
