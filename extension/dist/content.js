@@ -195,7 +195,22 @@
   var currentWidth = DEFAULT_WIDTH;
   var autoCapture = false;
   var stopObserver = null;
+  var currentTheme = "light";
+  function detectTheme() {
+    const html = document.documentElement;
+    if (html.classList.contains("dark")) return "dark";
+    if (html.getAttribute("data-color-scheme") === "dark") return "dark";
+    return "light";
+  }
+  function syncThemeToSidebar() {
+    const theme = detectTheme();
+    if (theme !== currentTheme) {
+      currentTheme = theme;
+      postToSidebar({ type: "THEME", theme });
+    }
+  }
   function init() {
+    currentTheme = detectTheme();
     chrome.storage.local.get([STORAGE_WIDTH, STORAGE_AUTO], (items) => {
       if (items[STORAGE_WIDTH]) currentWidth = items[STORAGE_WIDTH];
       if (items[STORAGE_AUTO]) autoCapture = items[STORAGE_AUTO];
@@ -205,7 +220,18 @@
       setupMessageBridge();
       adjustPageMargin(currentWidth);
       adjustFixedElements(currentWidth);
+      setTimeout(() => syncThemeToSidebar(), 500);
       if (autoCapture) startObserver();
+    });
+    const themeObserver = new MutationObserver(() => {
+      syncThemeToSidebar();
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "data-color-scheme"]
+    });
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      syncThemeToSidebar();
     });
   }
   function injectSidebar() {
@@ -218,25 +244,28 @@
       bottom: "0",
       width: `${currentWidth}px`,
       zIndex: "99999",
-      transition: "transform 0.3s ease",
+      transition: "transform 0.3s ease, box-shadow 0.3s ease",
       display: "flex",
       flexDirection: "row"
     });
     const handle = document.createElement("div");
     handle.id = HANDLE_ID;
     Object.assign(handle.style, {
-      width: "4px",
+      width: "3px",
       cursor: "col-resize",
       background: "transparent",
-      transition: "background 0.15s",
+      transition: "background 0.2s, width 0.15s",
       flexShrink: "0",
-      zIndex: "10"
+      zIndex: "10",
+      borderLeft: "1px solid transparent"
     });
     handle.addEventListener("mouseenter", () => {
-      handle.style.background = "#3b82f6";
+      handle.style.background = "#3964FE";
+      handle.style.width = "4px";
     });
     handle.addEventListener("mouseleave", () => {
       handle.style.background = "transparent";
+      handle.style.width = "3px";
     });
     handle.addEventListener("mousedown", onResizeStart);
     const iframe = document.createElement("iframe");
@@ -245,34 +274,44 @@
     Object.assign(iframe.style, {
       flex: "1",
       border: "none",
-      background: "#fff",
-      boxShadow: "-2px 0 12px rgba(0,0,0,0.08)"
+      background: "#f2f2f6",
+      boxShadow: "-1px 0 0 rgba(0,0,0,0.06), -4px 0 16px rgba(0,0,0,0.06)"
     });
     container.appendChild(handle);
     container.appendChild(iframe);
     document.body.appendChild(container);
     const toggle = document.createElement("button");
     toggle.id = TOGGLE_ID;
-    toggle.textContent = "\xBB";
+    toggle.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
     toggle.title = "\u6536\u8D77/\u5C55\u5F00\u4FA7\u8FB9\u680F";
     Object.assign(toggle.style, {
       position: "fixed",
       bottom: "20px",
       right: `${currentWidth}px`,
       zIndex: "100000",
-      width: "22px",
-      height: "48px",
-      border: "1px solid #e2e8f0",
+      width: "24px",
+      height: "44px",
+      border: "1px solid rgba(0,0,0,0.08)",
       borderRadius: "6px 0 0 6px",
-      background: "#fff",
+      background: "#ffffff",
       cursor: "pointer",
-      fontSize: "14px",
-      color: "#64748b",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      transition: "right 0.3s ease",
-      boxShadow: "-1px 0 4px rgba(0,0,0,0.06)"
+      transition: "right 0.3s ease, background 0.15s, border-color 0.15s",
+      boxShadow: "-1px 0 8px rgba(0,0,0,0.04)",
+      padding: "0",
+      color: "#6e6e88"
+    });
+    toggle.addEventListener("mouseenter", () => {
+      toggle.style.background = "#3964FE";
+      toggle.style.color = "#ffffff";
+      toggle.style.borderColor = "#3964FE";
+    });
+    toggle.addEventListener("mouseleave", () => {
+      toggle.style.background = "#ffffff";
+      toggle.style.color = "#6e6e88";
+      toggle.style.borderColor = "rgba(0,0,0,0.08)";
     });
     toggle.addEventListener("click", onToggle);
     document.body.appendChild(toggle);
@@ -297,25 +336,32 @@
   function applyWidth(w) {
     const container = document.getElementById(CONTAINER_ID);
     const toggle = document.getElementById(TOGGLE_ID);
+    const captureBtn = document.getElementById(CAPTURE_ID);
     if (container) container.style.width = `${w}px`;
     if (toggle) toggle.style.right = `${w}px`;
+    if (captureBtn && visible) captureBtn.style.right = `${w + 16}px`;
     adjustPageMargin(visible ? w : 0);
   }
   function onToggle() {
     visible = !visible;
     const container = document.getElementById(CONTAINER_ID);
     const toggle = document.getElementById(TOGGLE_ID);
+    const captureBtn = document.getElementById(CAPTURE_ID);
     if (!container || !toggle) return;
+    const chevronRight = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+    const chevronLeft = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>`;
     if (visible) {
       container.style.transform = "translateX(0)";
       toggle.style.right = `${currentWidth}px`;
-      toggle.textContent = "\xBB";
+      toggle.innerHTML = chevronRight;
+      if (captureBtn) captureBtn.style.right = `${currentWidth + 16}px`;
       adjustPageMargin(currentWidth);
       adjustFixedElements(currentWidth);
     } else {
       container.style.transform = `translateX(${currentWidth}px)`;
       toggle.style.right = "0";
-      toggle.textContent = "\xAB";
+      toggle.innerHTML = chevronLeft;
+      if (captureBtn) captureBtn.style.right = "16px";
       adjustPageMargin(0);
       adjustFixedElements(0);
     }
@@ -361,68 +407,66 @@
   function injectCaptureButton() {
     const btn = document.createElement("button");
     btn.id = CAPTURE_ID;
-    btn.textContent = "\u{1F4C4} \u6355\u83B7\u5230\u77E5\u8BC6\u6811";
+    btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>\u6355\u83B7\u5BF9\u8BDD</span>`;
     btn.title = "\u6355\u83B7\u5F53\u524D\u6700\u540E\u4E00\u7EC4\u95EE\u7B54";
     Object.assign(btn.style, {
       position: "fixed",
-      bottom: "24px",
-      right: `${currentWidth + 20}px`,
+      bottom: "80px",
+      right: `${currentWidth + 16}px`,
       zIndex: "100000",
       padding: "8px 16px",
       border: "none",
       borderRadius: "8px",
-      background: "#3b82f6",
-      color: "#fff",
+      background: "#3964FE",
+      color: "#ffffff",
       fontSize: "13px",
       fontWeight: "500",
       cursor: "pointer",
-      boxShadow: "0 4px 12px rgba(59,130,246,0.4)",
-      transition: "right 0.3s ease, background 0.15s"
+      boxShadow: "0 4px 14px rgba(57,100,254,0.35)",
+      transition: "right 0.3s ease, background 0.15s, transform 0.15s, box-shadow 0.15s",
+      fontFamily: "DM Sans, system-ui, sans-serif"
     });
     btn.addEventListener("mouseenter", () => {
-      btn.style.background = "#2563eb";
+      btn.style.background = "#2b54e8";
+      btn.style.transform = "translateY(-1px)";
+      btn.style.boxShadow = "0 6px 18px rgba(57,100,254,0.4)";
     });
     btn.addEventListener("mouseleave", () => {
-      btn.style.background = "#3b82f6";
+      btn.style.background = "#3964FE";
+      btn.style.transform = "translateY(0)";
+      btn.style.boxShadow = "0 4px 14px rgba(57,100,254,0.35)";
     });
     btn.addEventListener("click", handleManualCapture);
     document.body.appendChild(btn);
-    const updater = () => {
-      const btn2 = document.getElementById(CAPTURE_ID);
-      if (btn2) btn2.style.right = `${(visible ? currentWidth : 0) + 20}px`;
-    };
-    const origApply = applyWidth;
-    window.__kt_applyWidth = function(w) {
-      origApply(w);
-      updater();
-    };
   }
   function handleManualCapture() {
     const result = captureConversation();
     if (!result) {
-      showToast("\u26A0\uFE0F \u672A\u80FD\u6355\u83B7\u5230\u5BF9\u8BDD\u5185\u5BB9\uFF0C\u8BF7\u5C1D\u8BD5\u5728\u9875\u9762\u4E2D\u5148\u53D1\u9001\u4E00\u6761\u6D88\u606F", "error");
+      showToast("\u672A\u80FD\u6355\u83B7\u5230\u5BF9\u8BDD\u5185\u5BB9\uFF0C\u8BF7\u5148\u53D1\u9001\u4E00\u6761\u6D88\u606F", "error");
       return;
     }
     postToSidebar({ type: "CAPTURE_RESULT", data: result });
-    showToast("\u2705 \u5DF2\u6355\u83B7\uFF0C\u8BF7\u5728\u4FA7\u8FB9\u680F\u4E2D\u786E\u8BA4\u521B\u5EFA", "success");
+    showToast("\u5DF2\u6355\u83B7\uFF0C\u8BF7\u5728\u4FA7\u8FB9\u680F\u786E\u8BA4\u521B\u5EFA", "success");
   }
   function injectToast() {
     const toast = document.createElement("div");
     toast.id = TOAST_ID;
     Object.assign(toast.style, {
       position: "fixed",
-      bottom: "80px",
-      right: `${currentWidth + 20}px`,
+      bottom: "140px",
+      right: `${currentWidth + 16}px`,
       zIndex: "100001",
       padding: "10px 18px",
       borderRadius: "8px",
       fontSize: "13px",
       fontWeight: "500",
+      fontFamily: "DM Sans, system-ui, sans-serif",
       pointerEvents: "none",
       opacity: "0",
       transform: "translateY(10px)",
       transition: "opacity 0.3s, transform 0.3s, right 0.3s",
-      maxWidth: "320px"
+      maxWidth: "320px",
+      boxShadow: "0 4px 16px rgba(0,0,0,0.15)"
     });
     document.body.appendChild(toast);
   }
@@ -430,14 +474,10 @@
   function showToast(msg, type = "info") {
     const toast = document.getElementById(TOAST_ID);
     if (!toast) return;
-    const colors = {
-      success: "#16a34a",
-      error: "#dc2626",
-      info: "#3b82f6"
-    };
+    const colors = { success: "#10b981", error: "#ef4444", info: "#3964FE" };
     toast.textContent = msg;
     toast.style.background = colors[type];
-    toast.style.color = "#fff";
+    toast.style.color = "#ffffff";
     toast.style.opacity = "1";
     toast.style.transform = "translateY(0)";
     toast.style.pointerEvents = "auto";
@@ -451,7 +491,7 @@
     if (stopObserver) return;
     stopObserver = startAutoCapture((qa) => {
       postToSidebar({ type: "AUTO_CAPTURE", data: qa });
-      showToast("\u{1F514} \u68C0\u6D4B\u5230\u65B0\u95EE\u7B54\uFF0C\u8BF7\u5728\u4FA7\u8FB9\u680F\u786E\u8BA4", "info");
+      showToast("\u68C0\u6D4B\u5230\u65B0\u95EE\u7B54\uFF0C\u8BF7\u5728\u4FA7\u8FB9\u680F\u786E\u8BA4", "info");
     });
   }
   function stopObserverFn() {
@@ -491,7 +531,7 @@
           showToast(msg.text || "", msg.variant || "info");
           break;
         case "CREATED":
-          showToast(`\u2705 \u8282\u70B9\u5DF2\u521B\u5EFA`, "success");
+          showToast("\u8282\u70B9\u5DF2\u521B\u5EFA", "success");
           break;
       }
     });

@@ -3,7 +3,7 @@
  *
  * 消息类型：
  *   sidebar → content: CAPTURE, RESIZE, TOGGLE, AUTO_TOGGLE, TOAST, CREATED
- *   content → sidebar: CAPTURE_RESULT, AUTO_CAPTURE
+ *   content → sidebar: CAPTURE_RESULT, AUTO_CAPTURE, THEME
  */
 
 import type { CapturedQA } from './types';
@@ -26,14 +26,15 @@ export function sendToContent(msg: MsgToContent) {
 
 export type MsgFromContent =
   | { type: 'CAPTURE_RESULT'; data: CapturedQA | null }
-  | { type: 'AUTO_CAPTURE'; data: CapturedQA };
+  | { type: 'AUTO_CAPTURE'; data: CapturedQA }
+  | { type: 'THEME'; theme: 'light' | 'dark' };
 
 export function listenFromContent(
   handler: (msg: MsgFromContent) => void
 ): () => void {
   const listener = (event: MessageEvent) => {
     const d = event.data;
-    if (d && (d.type === 'CAPTURE_RESULT' || d.type === 'AUTO_CAPTURE')) {
+    if (d && (d.type === 'CAPTURE_RESULT' || d.type === 'AUTO_CAPTURE' || d.type === 'THEME')) {
       handler(d as MsgFromContent);
     }
   };

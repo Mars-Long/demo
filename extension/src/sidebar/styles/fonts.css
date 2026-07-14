@@ -1,0 +1,3 @@
+/* Using system fonts — no external Google Fonts dependency.
+   The extension iframe CSP blocks cross-origin font/CSS loads.
+   DM Sans is specified first as the preferred font but falls back gracefully. */
