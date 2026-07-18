@@ -3,37 +3,32 @@
  *
  * 职责：
  *   1. 注入 iframe（src = chrome.runtime.getURL('sidebar/index.html')）
- *   2. 注入浮动捕获按钮 + Toast
+ *   2. 注入导出对话按钮（API 方案）
  *   3. 可拖拽分割线（调整侧边栏宽度）
  *   4. 展开/收起切换
- *   5. postMessage 桥接（sidebar ↔ content ↔ DeepSeek DOM）
- *   6. 启动 MutationObserver 自动监听
- *   7. 主题检测 & 同步到 sidebar iframe
+ *   5. postMessage 桥接（sidebar ↔ content）
+ *   6. 主题检测 & 同步到 sidebar iframe
  */
 
-import { captureConversation } from './parser';
-import { startAutoCapture, type CapturedQA } from './observer';
+import { exportConversation } from './export-api';
 
 // ── constants ──────────────────────────────────────────────
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 600;
 const DEFAULT_WIDTH = 420;
 const STORAGE_WIDTH = 'kt_sidebar_width';
-const STORAGE_AUTO = 'kt_auto_capture';
 
 // ── DOM IDs ────────────────────────────────────────────────
 const CONTAINER_ID = 'kt-sidebar-container';
 const IFRAME_ID = 'kt-sidebar-iframe';
 const HANDLE_ID = 'kt-sidebar-handle';
 const TOGGLE_ID = 'kt-sidebar-toggle';
-const CAPTURE_ID = 'kt-capture-btn';
+const EXPORT_ID = 'kt-export-btn';
 const TOAST_ID = 'kt-toast';
 
 // ── state ──────────────────────────────────────────────────
-let visible = true;
+let visible = false;
 let currentWidth = DEFAULT_WIDTH;
-let autoCapture = false;
-let stopObserver: (() => void) | null = null;
 let currentTheme: 'light' | 'dark' = 'light';
 
 // ── theme detection ────────────────────────────────────────
@@ -61,21 +56,18 @@ function init() {
   currentTheme = detectTheme();
 
   // Restore settings
-  chrome.storage.local.get([STORAGE_WIDTH, STORAGE_AUTO], (items) => {
+  chrome.storage.local.get([STORAGE_WIDTH], (items) => {
     if (items[STORAGE_WIDTH]) currentWidth = items[STORAGE_WIDTH];
-    if (items[STORAGE_AUTO]) autoCapture = items[STORAGE_AUTO];
 
     injectSidebar();
-    injectCaptureButton();
+    injectExportButton();
     injectToast();
     setupMessageBridge();
-    adjustPageMargin(currentWidth);
-    adjustFixedElements(currentWidth);
+    adjustPageMargin(visible ? currentWidth : 0);
+    adjustFixedElements(visible ? currentWidth : 0);
 
     // Sync theme after sidebar is ready
     setTimeout(() => syncThemeToSidebar(), 500);
-
-    if (autoCapture) startObserver();
   });
 
   // Watch for theme changes on the host page
@@ -146,17 +138,26 @@ function injectSidebar() {
 
   container.appendChild(handle);
   container.appendChild(iframe);
+
+  // 初始折叠状态
+  if (!visible) {
+    container.style.transform = `translateX(${currentWidth}px)`;
+  }
+
   document.body.appendChild(container);
 
   // Toggle button — redesigned Figma style
+  const chevronRight = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+  const chevronLeft = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>`;
+
   const toggle = document.createElement('button');
   toggle.id = TOGGLE_ID;
-  toggle.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+  toggle.innerHTML = visible ? chevronRight : chevronLeft;
   toggle.title = '收起/展开侧边栏';
   Object.assign(toggle.style, {
     position: 'fixed',
     bottom: '20px',
-    right: `${currentWidth}px`,
+    right: visible ? `${currentWidth}px` : '0',
     zIndex: '100000',
     width: '24px',
     height: '44px',
@@ -213,10 +214,10 @@ function onResizeStart(e: MouseEvent) {
 function applyWidth(w: number) {
   const container = document.getElementById(CONTAINER_ID);
   const toggle = document.getElementById(TOGGLE_ID);
-  const captureBtn = document.getElementById(CAPTURE_ID);
+  const exportBtn = document.getElementById(EXPORT_ID);
   if (container) container.style.width = `${w}px`;
   if (toggle) toggle.style.right = `${w}px`;
-  if (captureBtn && visible) captureBtn.style.right = `${w + 16}px`;
+  if (exportBtn && visible) exportBtn.style.right = `${w + 16}px`;
   adjustPageMargin(visible ? w : 0);
 }
 
@@ -226,7 +227,7 @@ function onToggle() {
   visible = !visible;
   const container = document.getElementById(CONTAINER_ID);
   const toggle = document.getElementById(TOGGLE_ID);
-  const captureBtn = document.getElementById(CAPTURE_ID);
+  const exportBtn = document.getElementById(EXPORT_ID);
   if (!container || !toggle) return;
 
   const chevronRight = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
@@ -236,14 +237,14 @@ function onToggle() {
     container.style.transform = 'translateX(0)';
     toggle.style.right = `${currentWidth}px`;
     toggle.innerHTML = chevronRight;
-    if (captureBtn) captureBtn.style.right = `${currentWidth + 16}px`;
+    if (exportBtn) exportBtn.style.right = `${currentWidth + 16}px`;
     adjustPageMargin(currentWidth);
     adjustFixedElements(currentWidth);
   } else {
     container.style.transform = `translateX(${currentWidth}px)`;
     toggle.style.right = '0';
     toggle.innerHTML = chevronLeft;
-    if (captureBtn) captureBtn.style.right = '16px';
+    if (exportBtn) exportBtn.style.right = '16px';
     adjustPageMargin(0);
     adjustFixedElements(0);
   }
@@ -276,7 +277,7 @@ function adjustFixedElements(w: number) {
   for (const el of candidates) {
     if (!(el instanceof HTMLElement)) continue;
     // 排除侧边栏自身的元素
-    if (el.id === CONTAINER_ID || el.id === TOGGLE_ID || el.id === CAPTURE_ID || el.id === TOAST_ID) continue;
+    if (el.id === CONTAINER_ID || el.id === TOGGLE_ID || el.id === EXPORT_ID || el.id === TOAST_ID) continue;
     if (el.closest(`#${CONTAINER_ID}`)) continue;
     const s = window.getComputedStyle(el);
     if (s.position !== 'fixed') continue;
@@ -299,17 +300,17 @@ function adjustFixedElements(w: number) {
   }
 }
 
-// ── capture button ─────────────────────────────────────────
+// ── export button ─────────────────────────────────────────
 
-function injectCaptureButton() {
+function injectExportButton() {
   const btn = document.createElement('button');
-  btn.id = CAPTURE_ID;
-  btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>捕获对话</span>`;
-  btn.title = '捕获当前最后一组问答';
+  btn.id = EXPORT_ID;
+  btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>导出对话</span>`;
+  btn.title = '导出完整对话为 .md + .json（API 方案）';
   Object.assign(btn.style, {
     position: 'fixed',
-    bottom: '80px',
-    right: `${currentWidth + 16}px`,
+    bottom: '130px',
+    right: visible ? `${currentWidth + 16}px` : '16px',
     zIndex: '100000',
     padding: '8px 16px',
     border: 'none',
@@ -333,19 +334,34 @@ function injectCaptureButton() {
     btn.style.transform = 'translateY(0)';
     btn.style.boxShadow = '0 4px 14px rgba(57,100,254,0.35)';
   });
-  btn.addEventListener('click', handleManualCapture);
+  btn.addEventListener('click', handleExport);
 
   document.body.appendChild(btn);
 }
 
-function handleManualCapture() {
-  const result = captureConversation();
-  if (!result) {
-    showToast('未能捕获到对话内容，请先发送一条消息', 'error');
-    return;
+async function handleExport() {
+  const btn = document.getElementById(EXPORT_ID);
+  if (btn) {
+    btn.textContent = '⏳ 导出中…';
+    (btn as HTMLButtonElement).disabled = true;
+    btn.style.opacity = '0.7';
+    btn.style.cursor = 'default';
   }
-  postToSidebar({ type: 'CAPTURE_RESULT', data: result });
-  showToast('已捕获，请在侧边栏确认创建', 'success');
+
+  const ok = await exportConversation();
+
+  if (btn) {
+    (btn as HTMLButtonElement).disabled = false;
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
+    btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>导出对话</span>`;
+  }
+
+  if (ok) {
+    showToast('✅ 导出成功，已下载 .md + .json', 'success');
+  } else {
+    showToast('❌ 导出失败，请确保在 DeepSeek 对话页面', 'error');
+  }
 }
 
 // ── toast ──────────────────────────────────────────────────
@@ -356,7 +372,7 @@ function injectToast() {
   Object.assign(toast.style, {
     position: 'fixed',
     bottom: '140px',
-    right: `${currentWidth + 16}px`,
+    right: visible ? `${currentWidth + 16}px` : '16px',
     zIndex: '100001',
     padding: '10px 18px',
     borderRadius: '8px',
@@ -393,23 +409,6 @@ function showToast(msg: string, type: 'success' | 'error' | 'info' = 'info') {
   }, 3000);
 }
 
-// ── auto capture observer ──────────────────────────────────
-
-function startObserver() {
-  if (stopObserver) return;
-  stopObserver = startAutoCapture((qa: CapturedQA) => {
-    postToSidebar({ type: 'AUTO_CAPTURE', data: qa });
-    showToast('检测到新问答，请在侧边栏确认', 'info');
-  });
-}
-
-function stopObserverFn() {
-  if (stopObserver) {
-    stopObserver();
-    stopObserver = null;
-  }
-}
-
 // ── message bridge ─────────────────────────────────────────
 
 function setupMessageBridge() {
@@ -421,11 +420,6 @@ function setupMessageBridge() {
     if (!msg || !msg.type) return;
 
     switch (msg.type) {
-      case 'CAPTURE': {
-        const result = captureConversation();
-        postToSidebar({ type: 'CAPTURE_RESULT', data: result });
-        break;
-      }
       case 'RESIZE':
         currentWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, msg.width || DEFAULT_WIDTH));
         applyWidth(currentWidth);
@@ -434,13 +428,6 @@ function setupMessageBridge() {
       case 'TOGGLE':
         onToggle();
         break;
-      case 'AUTO_TOGGLE': {
-        autoCapture = msg.enabled;
-        chrome.storage.local.set({ [STORAGE_AUTO]: autoCapture });
-        if (autoCapture) startObserver();
-        else stopObserverFn();
-        break;
-      }
       case 'TOAST':
         showToast(msg.text || '', msg.variant || 'info');
         break;

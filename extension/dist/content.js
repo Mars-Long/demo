@@ -1,182 +1,168 @@
 "use strict";
 (() => {
-  // src/content/parser.ts
-  var strategies = [
-    strategyDSMarkdown,
-    strategyChatBubbles,
-    strategyVisibleText
-  ];
-  function captureConversation() {
-    for (const fn of strategies) {
-      const result = fn();
-      if (result && result.question.length > 2 && result.answer.length > 2) {
-        return result;
-      }
-    }
-    return null;
-  }
-  function strategyDSMarkdown() {
-    const selectors = [
-      ".ds-markdown",
-      '[class*="ds_markdown"]',
-      '[class*="markdown_body"]',
-      ".md-content",
-      '[class*="message"] [class*="content"]'
-    ];
-    for (const sel of selectors) {
-      const blocks = document.querySelectorAll(sel);
-      if (blocks.length < 2) continue;
-      const all = Array.from(blocks).filter(
-        (el) => (el.textContent?.length || 0) > 10
+  // src/content/export-api.ts
+  function extractContent(m) {
+    if (Array.isArray(m.fragments)) {
+      const rf = m.fragments.find(
+        (f) => typeof f === "object" && f.type === "RESPONSE" && f.content
       );
-      if (all.length < 2) continue;
-      const answer = all.pop()?.textContent?.trim() || "";
-      const question = all.pop()?.textContent?.trim() || "";
-      if (question && answer) return { question, answer };
-    }
-    return null;
-  }
-  function strategyChatBubbles() {
-    const userSelectors = [
-      '[class*="user"] [class*="content"]',
-      '[class*="human"] p',
-      '[class*="question"]',
-      '[data-role="user"]',
-      '[class*="right"] [class*="bubble"]',
-      '[class*="self"]'
-    ];
-    const aiSelectors = [
-      '[class*="assistant"] [class*="content"]',
-      '[class*="bot"] p',
-      '[class*="answer"]',
-      '[data-role="assistant"]',
-      '[class*="left"] [class*="bubble"]'
-    ];
-    for (const uSel of userSelectors) {
-      for (const aSel of aiSelectors) {
-        const userEls = document.querySelectorAll(uSel);
-        const aiEls = document.querySelectorAll(aSel);
-        const lastUser = userEls[userEls.length - 1];
-        const lastAI = aiEls[aiEls.length - 1];
-        const question = lastUser?.textContent?.trim() || "";
-        const answer = lastAI?.textContent?.trim() || "";
-        if (question && answer) return { question, answer };
+      if (rf) return rf.content.trim();
+      const parts = [];
+      for (const f of m.fragments) {
+        if (typeof f === "string") {
+          parts.push(f);
+        } else if (f.content) {
+          parts.push(typeof f.content === "string" ? f.content : f.content.text || "");
+        }
       }
+      const joined = parts.join("\n").trim();
+      if (joined) return joined;
     }
+    if (typeof m.content === "string" && m.content.trim()) return m.content.trim();
+    if (m.content?.text) return m.content.text.trim();
+    if (typeof m.text === "string") return m.text.trim();
+    return "";
+  }
+  function extractReasoning(m) {
+    if (Array.isArray(m.fragments)) {
+      const tf = m.fragments.find(
+        (f) => typeof f === "object" && f.type === "THINK" && f.content
+      );
+      if (tf) return tf.content.trim();
+    }
+    if (typeof m.thinking_content === "string") return m.thinking_content.trim();
+    if (m.thinking_content?.text) return m.thinking_content.text.trim();
     return null;
   }
-  function strategyVisibleText() {
-    const containerSelectors = [
-      '[class*="chat"] [class*="scroll"]',
-      'main [class*="overflow"]',
-      '[class*="conversation"]',
-      '[class*="messages"]',
-      '[class*="chat-container"]'
-    ];
-    let chatContainer = null;
-    for (const sel of containerSelectors) {
-      chatContainer = document.querySelector(sel);
-      if (chatContainer) break;
-    }
-    if (!chatContainer) return null;
-    const children = Array.from(chatContainer.children);
-    const texts = children.map((c) => c.textContent?.trim()).filter((t) => !!t && t.length > 5);
-    if (texts.length < 2) return null;
-    return {
-      question: texts[texts.length - 2],
-      answer: texts[texts.length - 1]
-    };
+  function downloadFile(name, data, mimeType) {
+    const blob = new Blob([data], { type: `${mimeType};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const el = document.createElement("a");
+    el.href = url;
+    el.download = name;
+    el.click();
+    URL.revokeObjectURL(url);
   }
+  async function exportConversation() {
+    try {
+      const match = location.pathname.match(/\/a\/chat\/s\/([a-f0-9-]+)/);
+      if (!match) {
+        console.error("\u274C \u5BFC\u51FA\uFF1A\u4E0D\u5728 DeepSeek \u5BF9\u8BDD\u9875\u9762");
+        return false;
+      }
+      const sid = match[1];
+      let token = "";
+      try {
+        const raw = localStorage.getItem("userToken");
+        token = raw ? JSON.parse(raw).value || "" : "";
+      } catch {
+      }
+      const tzOffset = (/* @__PURE__ */ new Date()).getTimezoneOffset() * -60;
+      const resp = await fetch(
+        `/api/v0/chat/history_messages?chat_session_id=${sid}`,
+        {
+          headers: {
+            "x-client-bundle-id": "com.deepseek.chat",
+            "x-client-platform": "web",
+            "x-client-version": "2.2.0",
+            "x-client-locale": "zh_CN",
+            "x-client-timezone-offset": String(tzOffset),
+            ...token ? { authorization: `Bearer ${token}` } : {},
+            accept: "*/*"
+          }
+        }
+      );
+      if (!resp.ok) {
+        console.error(`\u274C \u5BFC\u51FA\uFF1AHTTP ${resp.status}`);
+        return false;
+      }
+      const j = await resp.json();
+      if (j.code !== 0) {
+        console.error("\u274C \u5BFC\u51FA\uFF1A", j.msg);
+        return false;
+      }
+      const msgs = j?.data?.biz_data?.chat_messages;
+      const sess = j?.data?.biz_data?.chat_session;
+      if (!Array.isArray(msgs) || msgs.length === 0) {
+        console.error("\u274C \u5BFC\u51FA\uFF1A\u65E0\u6D88\u606F");
+        return false;
+      }
+      const parsed = [];
+      const idToIndex = {};
+      const seen = /* @__PURE__ */ new Set();
+      for (const m of msgs) {
+        const role = (m.role || "").toLowerCase();
+        if (role === "system") continue;
+        const c = extractContent(m);
+        if (!c) continue;
+        const fp = m.message_id || `${role}::${c.slice(0, 100)}`;
+        if (seen.has(fp)) continue;
+        seen.add(fp);
+        const idx = parsed.length;
+        idToIndex[String(m.message_id)] = idx;
+        parsed.push({
+          role,
+          content: c,
+          message_id: m.message_id,
+          reasoning_content: extractReasoning(m),
+          _parentId: m.parent_id
+        });
+      }
+      for (const x of parsed) {
+        const p = x;
+        if (p._parentId != null) {
+          const parentIdx = idToIndex[String(p._parentId)];
+          if (parentIdx !== void 0) {
+            x.parent = parentIdx;
+          }
+        }
+        delete x._parentId;
+      }
+      const userCount = parsed.filter((m) => m.role === "user").length;
+      const aiCount = parsed.filter((m) => m.role === "assistant").length;
+      const title = (sess?.title || document.title || "deepseek-chat").replace(/[\\/:*?"<>|]/g, "-");
+      let md = `# ${title}
 
-  // src/content/observer.ts
-  function startAutoCapture(onNewQA) {
-    const chatContainer = findChatContainer();
-    if (!chatContainer) {
-      console.warn("[\u77E5\u8BC6\u6811] \u672A\u627E\u5230 DeepSeek \u5BF9\u8BDD\u5BB9\u5668\uFF0C\u81EA\u52A8\u6355\u83B7\u672A\u542F\u52A8");
-      return () => {
-      };
-    }
-    let processedCount = countMessages(chatContainer);
-    let streamEndTimer = null;
-    let lastContentLength = 0;
-    const observer = new MutationObserver(() => {
-      const messages = getMessageBlocks(chatContainer);
-      const currentCount = messages.length;
-      if (currentCount > processedCount) {
-        const totalLength = chatContainer.textContent?.length || 0;
-        if (streamEndTimer) clearTimeout(streamEndTimer);
-        if (totalLength !== lastContentLength) {
-          lastContentLength = totalLength;
-          streamEndTimer = setTimeout(() => {
-            const updated = getMessageBlocks(chatContainer);
-            if (updated.length >= 2) {
-              const lastQA = extractLastQA(updated);
-              if (lastQA) {
-                onNewQA(lastQA);
-              }
-            }
-            processedCount = updated.length;
-          }, 1500);
+> ${(/* @__PURE__ */ new Date()).toLocaleString()} | user:${userCount} assistant:${aiCount}
+
+---
+
+`;
+      let t = 1;
+      for (const m of parsed) {
+        if (m.role === "user") {
+          md += `## \u{1F9D1} You\uFF08${t}\uFF09
+
+${m.content}
+
+`;
+          t++;
+        } else {
+          md += `## \u{1F916} DeepSeek
+
+${m.content}
+
+`;
         }
+        md += "---\n\n";
       }
-      const actionBar = chatContainer.querySelector(
-        '[class*="action"], [class*="toolbar"], button[aria-label*="\u590D\u5236"], [class*="copy"]'
-      );
-      if (actionBar && currentCount > processedCount && !streamEndTimer) {
-        const messages2 = getMessageBlocks(chatContainer);
-        const lastQA = extractLastQA(messages2);
-        if (lastQA) {
-          onNewQA(lastQA);
-        }
-        processedCount = currentCount;
-      }
-    });
-    observer.observe(chatContainer, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
-    return () => {
-      observer.disconnect();
-      if (streamEndTimer) clearTimeout(streamEndTimer);
-    };
-  }
-  function findChatContainer() {
-    const selectors = [
-      '[class*="chat"] [class*="scroll"]',
-      'main [class*="overflow"]',
-      '[class*="conversation"]',
-      '[class*="messages"]',
-      '[class*="chat-container"]',
-      "main",
-      "#root > div > div"
-    ];
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el && el.scrollHeight > 200) return el;
+      const jsonOut = parsed.map((m) => {
+        const entry = { role: m.role, content: m.content, message_id: m.message_id };
+        if (m.reasoning_content) entry.reasoning_content = m.reasoning_content;
+        if (m.parent !== void 0) entry.parent = m.parent;
+        return entry;
+      });
+      const d = /* @__PURE__ */ new Date();
+      const date = d.toISOString().slice(0, 10);
+      const time = d.toTimeString().slice(0, 8).replace(/:/g, "");
+      const fn = `deepseek-${title.slice(0, 30)}-${date}-${time}`;
+      downloadFile(`${fn}.md`, md, "text/markdown");
+      downloadFile(`${fn}.json`, JSON.stringify(jsonOut, null, 2), "application/json");
+      return true;
+    } catch (e) {
+      console.error("\u274C \u5BFC\u51FA\u5F02\u5E38\uFF1A", e.message || e);
+      return false;
     }
-    return null;
-  }
-  function getMessageBlocks(container) {
-    return Array.from(container.querySelectorAll(
-      '.ds-markdown, [class*="message"], [class*="bubble"], [class*="turn"], [class*="chat-item"]'
-    )).filter((el) => (el.textContent?.length || 0) > 5);
-  }
-  function countMessages(container) {
-    return getMessageBlocks(container).length;
-  }
-  function extractLastQA(messages) {
-    if (messages.length < 2) return null;
-    const substantive = messages.filter(
-      (el) => (el.textContent?.length || 0) > 10
-    );
-    if (substantive.length < 2) return null;
-    const answer = substantive.pop()?.textContent?.trim() || "";
-    const question = substantive.pop()?.textContent?.trim() || "";
-    if (question.length > 2 && answer.length > 2) {
-      return { question, answer };
-    }
-    return null;
   }
 
   // src/content/index.ts
@@ -184,17 +170,14 @@
   var MAX_WIDTH = 600;
   var DEFAULT_WIDTH = 420;
   var STORAGE_WIDTH = "kt_sidebar_width";
-  var STORAGE_AUTO = "kt_auto_capture";
   var CONTAINER_ID = "kt-sidebar-container";
   var IFRAME_ID = "kt-sidebar-iframe";
   var HANDLE_ID = "kt-sidebar-handle";
   var TOGGLE_ID = "kt-sidebar-toggle";
-  var CAPTURE_ID = "kt-capture-btn";
+  var EXPORT_ID = "kt-export-btn";
   var TOAST_ID = "kt-toast";
-  var visible = true;
+  var visible = false;
   var currentWidth = DEFAULT_WIDTH;
-  var autoCapture = false;
-  var stopObserver = null;
   var currentTheme = "light";
   function detectTheme() {
     const html = document.documentElement;
@@ -211,17 +194,15 @@
   }
   function init() {
     currentTheme = detectTheme();
-    chrome.storage.local.get([STORAGE_WIDTH, STORAGE_AUTO], (items) => {
+    chrome.storage.local.get([STORAGE_WIDTH], (items) => {
       if (items[STORAGE_WIDTH]) currentWidth = items[STORAGE_WIDTH];
-      if (items[STORAGE_AUTO]) autoCapture = items[STORAGE_AUTO];
       injectSidebar();
-      injectCaptureButton();
+      injectExportButton();
       injectToast();
       setupMessageBridge();
-      adjustPageMargin(currentWidth);
-      adjustFixedElements(currentWidth);
+      adjustPageMargin(visible ? currentWidth : 0);
+      adjustFixedElements(visible ? currentWidth : 0);
       setTimeout(() => syncThemeToSidebar(), 500);
-      if (autoCapture) startObserver();
     });
     const themeObserver = new MutationObserver(() => {
       syncThemeToSidebar();
@@ -279,15 +260,20 @@
     });
     container.appendChild(handle);
     container.appendChild(iframe);
+    if (!visible) {
+      container.style.transform = `translateX(${currentWidth}px)`;
+    }
     document.body.appendChild(container);
+    const chevronRight = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+    const chevronLeft = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>`;
     const toggle = document.createElement("button");
     toggle.id = TOGGLE_ID;
-    toggle.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+    toggle.innerHTML = visible ? chevronRight : chevronLeft;
     toggle.title = "\u6536\u8D77/\u5C55\u5F00\u4FA7\u8FB9\u680F";
     Object.assign(toggle.style, {
       position: "fixed",
       bottom: "20px",
-      right: `${currentWidth}px`,
+      right: visible ? `${currentWidth}px` : "0",
       zIndex: "100000",
       width: "24px",
       height: "44px",
@@ -336,17 +322,17 @@
   function applyWidth(w) {
     const container = document.getElementById(CONTAINER_ID);
     const toggle = document.getElementById(TOGGLE_ID);
-    const captureBtn = document.getElementById(CAPTURE_ID);
+    const exportBtn = document.getElementById(EXPORT_ID);
     if (container) container.style.width = `${w}px`;
     if (toggle) toggle.style.right = `${w}px`;
-    if (captureBtn && visible) captureBtn.style.right = `${w + 16}px`;
+    if (exportBtn && visible) exportBtn.style.right = `${w + 16}px`;
     adjustPageMargin(visible ? w : 0);
   }
   function onToggle() {
     visible = !visible;
     const container = document.getElementById(CONTAINER_ID);
     const toggle = document.getElementById(TOGGLE_ID);
-    const captureBtn = document.getElementById(CAPTURE_ID);
+    const exportBtn = document.getElementById(EXPORT_ID);
     if (!container || !toggle) return;
     const chevronRight = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
     const chevronLeft = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>`;
@@ -354,14 +340,14 @@
       container.style.transform = "translateX(0)";
       toggle.style.right = `${currentWidth}px`;
       toggle.innerHTML = chevronRight;
-      if (captureBtn) captureBtn.style.right = `${currentWidth + 16}px`;
+      if (exportBtn) exportBtn.style.right = `${currentWidth + 16}px`;
       adjustPageMargin(currentWidth);
       adjustFixedElements(currentWidth);
     } else {
       container.style.transform = `translateX(${currentWidth}px)`;
       toggle.style.right = "0";
       toggle.innerHTML = chevronLeft;
-      if (captureBtn) captureBtn.style.right = "16px";
+      if (exportBtn) exportBtn.style.right = "16px";
       adjustPageMargin(0);
       adjustFixedElements(0);
     }
@@ -385,7 +371,7 @@
     );
     for (const el of candidates) {
       if (!(el instanceof HTMLElement)) continue;
-      if (el.id === CONTAINER_ID || el.id === TOGGLE_ID || el.id === CAPTURE_ID || el.id === TOAST_ID) continue;
+      if (el.id === CONTAINER_ID || el.id === TOGGLE_ID || el.id === EXPORT_ID || el.id === TOAST_ID) continue;
       if (el.closest(`#${CONTAINER_ID}`)) continue;
       const s = window.getComputedStyle(el);
       if (s.position !== "fixed") continue;
@@ -404,15 +390,15 @@
       }
     }
   }
-  function injectCaptureButton() {
+  function injectExportButton() {
     const btn = document.createElement("button");
-    btn.id = CAPTURE_ID;
-    btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>\u6355\u83B7\u5BF9\u8BDD</span>`;
-    btn.title = "\u6355\u83B7\u5F53\u524D\u6700\u540E\u4E00\u7EC4\u95EE\u7B54";
+    btn.id = EXPORT_ID;
+    btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>\u5BFC\u51FA\u5BF9\u8BDD</span>`;
+    btn.title = "\u5BFC\u51FA\u5B8C\u6574\u5BF9\u8BDD\u4E3A .md + .json\uFF08API \u65B9\u6848\uFF09";
     Object.assign(btn.style, {
       position: "fixed",
-      bottom: "80px",
-      right: `${currentWidth + 16}px`,
+      bottom: "130px",
+      right: visible ? `${currentWidth + 16}px` : "16px",
       zIndex: "100000",
       padding: "8px 16px",
       border: "none",
@@ -436,17 +422,29 @@
       btn.style.transform = "translateY(0)";
       btn.style.boxShadow = "0 4px 14px rgba(57,100,254,0.35)";
     });
-    btn.addEventListener("click", handleManualCapture);
+    btn.addEventListener("click", handleExport);
     document.body.appendChild(btn);
   }
-  function handleManualCapture() {
-    const result = captureConversation();
-    if (!result) {
-      showToast("\u672A\u80FD\u6355\u83B7\u5230\u5BF9\u8BDD\u5185\u5BB9\uFF0C\u8BF7\u5148\u53D1\u9001\u4E00\u6761\u6D88\u606F", "error");
-      return;
+  async function handleExport() {
+    const btn = document.getElementById(EXPORT_ID);
+    if (btn) {
+      btn.textContent = "\u23F3 \u5BFC\u51FA\u4E2D\u2026";
+      btn.disabled = true;
+      btn.style.opacity = "0.7";
+      btn.style.cursor = "default";
     }
-    postToSidebar({ type: "CAPTURE_RESULT", data: result });
-    showToast("\u5DF2\u6355\u83B7\uFF0C\u8BF7\u5728\u4FA7\u8FB9\u680F\u786E\u8BA4\u521B\u5EFA", "success");
+    const ok = await exportConversation();
+    if (btn) {
+      btn.disabled = false;
+      btn.style.opacity = "1";
+      btn.style.cursor = "pointer";
+      btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>\u5BFC\u51FA\u5BF9\u8BDD</span>`;
+    }
+    if (ok) {
+      showToast("\u2705 \u5BFC\u51FA\u6210\u529F\uFF0C\u5DF2\u4E0B\u8F7D .md + .json", "success");
+    } else {
+      showToast("\u274C \u5BFC\u51FA\u5931\u8D25\uFF0C\u8BF7\u786E\u4FDD\u5728 DeepSeek \u5BF9\u8BDD\u9875\u9762", "error");
+    }
   }
   function injectToast() {
     const toast = document.createElement("div");
@@ -454,7 +452,7 @@
     Object.assign(toast.style, {
       position: "fixed",
       bottom: "140px",
-      right: `${currentWidth + 16}px`,
+      right: visible ? `${currentWidth + 16}px` : "16px",
       zIndex: "100001",
       padding: "10px 18px",
       borderRadius: "8px",
@@ -487,19 +485,6 @@
       toast.style.transform = "translateY(10px)";
     }, 3e3);
   }
-  function startObserver() {
-    if (stopObserver) return;
-    stopObserver = startAutoCapture((qa) => {
-      postToSidebar({ type: "AUTO_CAPTURE", data: qa });
-      showToast("\u68C0\u6D4B\u5230\u65B0\u95EE\u7B54\uFF0C\u8BF7\u5728\u4FA7\u8FB9\u680F\u786E\u8BA4", "info");
-    });
-  }
-  function stopObserverFn() {
-    if (stopObserver) {
-      stopObserver();
-      stopObserver = null;
-    }
-  }
   function setupMessageBridge() {
     window.addEventListener("message", (event) => {
       const iframe = document.getElementById(IFRAME_ID);
@@ -507,11 +492,6 @@
       const msg = event.data;
       if (!msg || !msg.type) return;
       switch (msg.type) {
-        case "CAPTURE": {
-          const result = captureConversation();
-          postToSidebar({ type: "CAPTURE_RESULT", data: result });
-          break;
-        }
         case "RESIZE":
           currentWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, msg.width || DEFAULT_WIDTH));
           applyWidth(currentWidth);
@@ -520,13 +500,6 @@
         case "TOGGLE":
           onToggle();
           break;
-        case "AUTO_TOGGLE": {
-          autoCapture = msg.enabled;
-          chrome.storage.local.set({ [STORAGE_AUTO]: autoCapture });
-          if (autoCapture) startObserver();
-          else stopObserverFn();
-          break;
-        }
         case "TOAST":
           showToast(msg.text || "", msg.variant || "info");
           break;
