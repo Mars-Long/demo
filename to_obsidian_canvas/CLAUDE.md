@@ -49,7 +49,7 @@
 1. 不修改原始 message_id / parent 值
 2. 文件名用 sanitize 后的用户问题
 3. original_question 在 frontmatter 中，用于覆盖识别
-4. reasoning_content 用 `[!info]-` callout 折叠
+4. reasoning_content 用 `[!quote]` callout 引用格式
 5. vault_base 可配，默认 `{标题}/`
 
 ## 配置

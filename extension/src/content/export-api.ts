@@ -163,6 +163,10 @@ export async function exportConversation(): Promise<boolean> {
         t++;
       } else {
         md += `## 🤖 DeepSeek\n\n${m.content}\n\n`;
+        if (m.reasoning_content) {
+          const quoted = m.reasoning_content.split('\n').map(l => `> ${l}`).join('\n');
+          md += `> [!quote] 💭 思考过程\n${quoted}\n\n`;
+        }
       }
       md += '---\n\n';
     }

@@ -340,7 +340,7 @@ converter.py
   │   │                 user_parent, assistant_parent, original_question
   │   ├── ## ❓ 用户问题
   │   ├── ## 🤖 AI 回答
-  │   └── ## 💭 思考过程（> [!info]- callout，默认折叠）
+  │   └── ## 💭 思考过程（> [!quote] callout 引用块）
   │
   └── .canvas 文件
       ├── "type": "file" 节点 → 指向对应 .md
@@ -377,7 +377,7 @@ python to_obsidian_canvas/converter.py <json文件> [-o <输出目录>] [--vault
 
 - **不修改原始 message_id / parent 值** — 原样保留在 frontmatter 中
 - **文件名 = 用户问题 sanitize** — 可修改，original_question 字段用于覆盖识别
-- **reasoning_content 默认折叠** — Obsidian `[!info]-` callout
+- **reasoning_content 引用格式** — Obsidian `[!quote]` callout
 - **独立模块** — 不依赖 app/ 后端，纯本地文件操作
 
 ---
