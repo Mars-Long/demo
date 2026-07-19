@@ -6,7 +6,7 @@
 
 - **一问一答配对**：每个 user + assistant 组合为一个 `.md` 笔记节点
 - **对话树还原**：基于 JSON 中的 `parent` 引用，在 Canvas 中重建对话分支结构
-- **思考过程折叠**：assistant 的 `reasoning_content` 放入 `[!info]- 💭 思考过程` callout，默认折叠
+- **思考过程引用**：assistant 的 `reasoning_content` 放入 `[!quote]` callout 引用块
 - **原始数据保留**：`user_msg_id`、`assistant_msg_id`、`user_parent`、`assistant_parent` 原样写入 frontmatter
 - **原始问题追踪**：`original_question` 字段用于覆盖识别，即使文件名被修改也能定位
 - **自动树布局**：自上而下 (TB) 的递归树布局

@@ -116,7 +116,7 @@ def build_body(user_content: str, assistant_content: str, reasoning: str | None)
 
     if reasoning and reasoning.strip():
         folded = (
-            f"> [!info]- 💭 思考过程\n"
+            f"> [!quote]\n"
             f"{quote_lines(reasoning.strip())}"
         )
         parts.append(f"## 💭 思考过程\n\n{folded}")
