@@ -55,8 +55,49 @@ _load_dotenv()
 
 # ==================== 配置 ====================
 
-JSON_PATH = Path(os.environ.get("JSON_PATH", "tempdata/deepseek-xxx.json"))
-OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "to_obsidian_canvas/output"))
+# 项目根目录（converter.py 在 to_obsidian_canvas/ 下，上级 = 项目根）
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# 默认路径均相对于项目根，避免 CWD 不同导致解析错误
+JSON_PATH = PROJECT_ROOT / os.environ.get("JSON_PATH", "tempdata/deepseek-xxx.json")
+OUTPUT_DIR = PROJECT_ROOT / os.environ.get("OUTPUT_DIR", "to_obsidian_canvas/output")
+
+
+def resolve_json_path(explicit: Path | str | None = None) -> Path:
+    """
+    解析 JSON 输入路径。
+
+    优先级:
+      1. 显式传入的路径（相对路径先试 CWD，再试项目根）
+      2. 环境变量 JSON_PATH / .env 中配置的 JSON_PATH
+      3. 默认路径：自动匹配 tempdata/deepseek-*.json（取最新）
+    """
+    if explicit is not None:
+        p = Path(explicit)
+        if p.is_absolute():
+            return p
+        # 相对路径：先按 CWD 解析，不存在则按项目根解析
+        cwd_resolved = p.resolve()
+        if cwd_resolved.exists():
+            return cwd_resolved
+        proj_resolved = (PROJECT_ROOT / p).resolve()
+        if proj_resolved.exists():
+            return proj_resolved
+        # 都不存在 → 返回 CWD 解析结果，让上层报 FileNotFoundError
+        return cwd_resolved
+
+    path = JSON_PATH
+    # 占位符不存在时，自动 glob 匹配
+    if not path.exists():
+        candidates = sorted(
+            (PROJECT_ROOT / "tempdata").glob("deepseek-*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            path = candidates[0]
+
+    return path.resolve()
 
 # Canvas 布局
 NODE_WIDTH = 600
@@ -346,7 +387,7 @@ def convert(
     Returns:
         会话输出目录 Path
     """
-    jp = Path(json_path or JSON_PATH).resolve()
+    jp = resolve_json_path(json_path)
     out = Path(output_dir or OUTPUT_DIR).resolve()
 
     if not jp.exists():
