@@ -317,6 +317,71 @@ def build_context(current_node_id):
 - 依赖：`playwright`（必需）、`Pillow`（可选，`--image` 功能需要）
 - Python ≥ 3.10
 
+## to_obsidian_canvas — DS JSON → Obsidian Canvas 转换器
+
+位于项目根目录 `to_obsidian_canvas/`，独立模块，不依赖后端服务。
+
+### 功能
+
+将 DeepSeek 前端导出的对话 JSON 转换为：
+1. **一问一答 `.md` 笔记** — 每个 user+assistant 配对 = 一个 Obsidian 兼容的 Markdown 节点
+2. **一个 `.canvas` 文件** — file 节点 + edge 还原对话树，可在 Obsidian 中可视化编辑
+
+### 数据流
+
+```
+DS 导出 JSON (tempdata/*.json)
+  │  parent 引用 → 配对 → 树结构推断
+  ▼
+converter.py
+  │
+  ├── .md 文件（每轮对话一个）
+  │   ├── frontmatter: tags, user_msg_id, assistant_msg_id,
+  │   │                 user_parent, assistant_parent, original_question
+  │   ├── ## ❓ 用户问题
+  │   ├── ## 🤖 AI 回答
+  │   └── ## 💭 思考过程（> [!info]- callout，默认折叠）
+  │
+  └── .canvas 文件
+      ├── "type": "file" 节点 → 指向对应 .md
+      └── edge → 还原对话分支树
+```
+
+### 核心逻辑
+
+| 步骤 | 说明 |
+|------|------|
+| 配对 | user 消息 + assistant.parent==user_idx 的 assistant → 一问一答节点 |
+| 树结构 | user.parent → 数组索引 → 找到所在配对 → 该配对为 canvas 父节点 |
+| 标签 | root（无父）/ branch（有父有子）/ leaf（有父无子）|
+| 布局 | 自底向上递归树布局（TB 方向），叶子从左到右排，内部节点居中 |
+
+### 输出结构
+
+```
+output/{对话标题}/           # 标题从 JSON 文件名提取（去日期）
+  ├── {用户问题}.md
+  ├── ...
+  └── {对话标题}.canvas
+```
+
+### 使用
+
+```bash
+python to_obsidian_canvas/converter.py <json文件> [-o <输出目录>] [--vault-base <前缀>]
+```
+
+`--vault-base` 指定 Canvas `file` 字段的 vault 相对路径前缀，默认 `"{对话标题}/"`。
+
+### 关键设计决策
+
+- **不修改原始 message_id / parent 值** — 原样保留在 frontmatter 中
+- **文件名 = 用户问题 sanitize** — 可修改，original_question 字段用于覆盖识别
+- **reasoning_content 默认折叠** — Obsidian `[!info]-` callout
+- **独立模块** — 不依赖 app/ 后端，纯本地文件操作
+
+---
+
 ## 项目规则
 
 1. **依赖变更同步** — 安装或升级项目依赖后，必须同步更新 `requirements.txt`，保持版本号一致。
