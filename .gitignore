@@ -7,3 +7,4 @@ data/
 dsfrontend/
 tempdata/
 to_obsidian_canvas/output/
+.env

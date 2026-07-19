@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -29,10 +30,33 @@ from pathlib import Path
 # Windows 终端 GBK 编码兜底
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+
+# ==================== .env 加载 ====================
+
+def _load_dotenv() -> None:
+    """从项目根目录加载 .env 到 os.environ（已存在的环境变量不覆盖）。"""
+    # converter.py 在 to_obsidian_canvas/ 下，项目根 = 上级目录
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv()
+
+
 # ==================== 配置 ====================
 
-JSON_PATH = Path("tempdata/deepseek-问候与回应-2026-07-19-160506.json")
-OUTPUT_DIR = Path("to_obsidian_canvas/output")
+JSON_PATH = Path(os.environ.get("JSON_PATH", "tempdata/deepseek-xxx.json"))
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "to_obsidian_canvas/output"))
 
 # Canvas 布局
 NODE_WIDTH = 300
