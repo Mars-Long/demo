@@ -59,10 +59,10 @@ JSON_PATH = Path(os.environ.get("JSON_PATH", "tempdata/deepseek-xxx.json"))
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "to_obsidian_canvas/output"))
 
 # Canvas 布局
-NODE_WIDTH = 300
-NODE_HEIGHT = 160
-H_GAP = 60
-V_GAP = 240
+NODE_WIDTH = 600
+NODE_HEIGHT = 320
+H_GAP = 120
+V_GAP = 480
 
 # ==================== 工具函数 ====================
 
@@ -140,7 +140,7 @@ def build_body(user_content: str, assistant_content: str, reasoning: str | None)
 
     if reasoning and reasoning.strip():
         folded = (
-            f"> [!quote] 💭 思考过程\n"
+            f"> [!quote]- 💭 思考过程\n"
             f"{quote_lines(reasoning.strip())}"
         )
         parts.append(f"## 💭 思考过程\n\n{folded}")
